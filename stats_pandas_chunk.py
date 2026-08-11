@@ -25,7 +25,17 @@ def compute_stats_pandas_chunk(
     column: str,
     chunksize: int = 200_000,
     group_by: str | None = None,
+    extra_group_by: str | None = None,
 ) -> dict:
+    """
+    Tính thống kê tổng quan (+ theo nhóm, + theo `extra_group_by` nếu có,
+    ví dụ cột ngày để làm xu hướng) trong CÙNG MỘT lượt đọc file.
+
+    Quan trọng: chỉ đọc đúng các cột cần dùng (`usecols`) — với file có
+    nhiều cột thừa (vài chục cột), điều này giảm đáng kể thời gian parse
+    và tránh các cảnh báo/độ trễ do suy luận kiểu dữ liệu (dtype inference)
+    trên các cột không liên quan.
+    """
     total_count = 0
     total_sum = 0.0
     total_sumsq = 0.0
@@ -35,10 +45,17 @@ def compute_stats_pandas_chunk(
     n_rows = 0
 
     group_frames = []
+    trend_frames = []
+
+    needed_cols = [column]
+    if group_by:
+        needed_cols.append(group_by)
+    if extra_group_by and extra_group_by not in needed_cols:
+        needed_cols.append(extra_group_by)
 
     t0 = time.perf_counter()
 
-    reader = pd.read_csv(file_path, chunksize=chunksize)
+    reader = pd.read_csv(file_path, usecols=needed_cols, chunksize=chunksize, low_memory=False)
     for chunk in reader:
         n_rows += len(chunk)
         numeric = pd.to_numeric(chunk[column], errors="coerce")
@@ -54,13 +71,19 @@ def compute_stats_pandas_chunk(
             global_min = min(global_min, valid.min())
             global_max = max(global_max, valid.max())
 
-        if group_by:
+        if group_by or extra_group_by:
             chunk = chunk.copy()
             chunk[column] = numeric
-            group_frames.append(
-                chunk.dropna(subset=[column]).groupby(group_by)[column]
-                .agg(["count", "sum", "min", "max"])
-            )
+            valid_chunk = chunk.dropna(subset=[column])
+
+            if group_by:
+                group_frames.append(
+                    valid_chunk.groupby(group_by)[column].agg(["count", "sum", "min", "max"])
+                )
+            if extra_group_by:
+                trend_frames.append(
+                    valid_chunk.groupby(extra_group_by)[column].agg(["count", "sum"])
+                )
 
     elapsed = time.perf_counter() - t0
 
@@ -98,6 +121,17 @@ def compute_stats_pandas_chunk(
         )
         result["group_by"] = group_by
         result["by_group"] = agg.round(2).to_dict(orient="index")
+
+    # --- REDUCE: gộp xu hướng theo cột phụ (vd: ngày) từ các chunk ---
+    if extra_group_by and trend_frames:
+        combined_trend = pd.concat(trend_frames).groupby(level=0).sum()
+        combined_trend = combined_trend.sort_index()
+        result["extra_group_by"] = extra_group_by
+        result["trend"] = {
+            "keys": [str(k) for k in combined_trend.index.tolist()],
+            "sum": [round(float(v), 2) for v in combined_trend["sum"].tolist()],
+            "count": [int(v) for v in combined_trend["count"].tolist()],
+        }
 
     return result
 

@@ -57,9 +57,10 @@ def build_html_report(
 
     chart_sections = ""
     for title, data_uri in charts.items():
+        # Không thêm tiêu đề <h3> ở đây vì tiêu đề đã được vẽ sẵn bên trong
+        # chính hình ảnh (ax.set_title) — tránh hiển thị trùng lặp 2 lần.
         chart_sections += f"""
         <div class="chart-block">
-            <h3>{title}</h3>
             <img src="{data_uri}" alt="{title}" />
         </div>
         """

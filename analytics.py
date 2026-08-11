@@ -27,10 +27,17 @@ def compute_overall_and_group_stats(
     file_path: str,
     column: str,
     group_by: Optional[str] = None,
+    extra_group_by: Optional[str] = None,
     chunksize: int = 200_000,
 ) -> dict:
-    """Wrapper mỏng quanh stats_pandas_chunk để dùng chung trong app.py."""
-    return compute_stats_pandas_chunk(file_path, column, chunksize=chunksize, group_by=group_by)
+    """
+    Wrapper mỏng quanh stats_pandas_chunk để dùng chung trong app.py.
+    `extra_group_by` (vd: cột ngày) được tính GỘP trong cùng lượt đọc này
+    (không phải đọc file thêm một lần riêng) để giảm số lượt quét file lớn.
+    """
+    return compute_stats_pandas_chunk(
+        file_path, column, chunksize=chunksize, group_by=group_by, extra_group_by=extra_group_by
+    )
 
 
 def compute_histogram(
