@@ -22,6 +22,27 @@ import pandas as pd
 
 from stats_pandas_chunk import compute_stats_pandas_chunk
 
+COMMON_ENCODINGS = ["utf-8", "utf-8-sig", "latin1", "cp1252"]
+
+
+def detect_encoding(file_path: str) -> str:
+    """
+    Thử đọc vài dòng đầu của file bằng các encoding phổ biến, trả về
+    encoding đầu tiên đọc thành công. Giúp chương trình không bị lỗi
+    UnicodeDecodeError khi người dùng upload file CSV xuất từ Excel/hệ
+    thống khác (thường dùng cp1252/latin1 thay vì utf-8).
+    """
+    for enc in COMMON_ENCODINGS:
+        try:
+            pd.read_csv(file_path, nrows=5, encoding=enc)
+            return enc
+        except UnicodeDecodeError:
+            continue
+        except Exception:
+            # Lỗi khác không liên quan encoding (vd: file rỗng) -> vẫn trả về utf-8
+            return enc
+    return "utf-8"  # fallback cuối cùng
+
 
 def compute_overall_and_group_stats(
     file_path: str,
@@ -29,6 +50,7 @@ def compute_overall_and_group_stats(
     group_by: Optional[str] = None,
     extra_group_by: Optional[str] = None,
     chunksize: int = 200_000,
+    encoding: str = "utf-8",
 ) -> dict:
     """
     Wrapper mỏng quanh stats_pandas_chunk để dùng chung trong app.py.
@@ -36,7 +58,8 @@ def compute_overall_and_group_stats(
     (không phải đọc file thêm một lần riêng) để giảm số lượt quét file lớn.
     """
     return compute_stats_pandas_chunk(
-        file_path, column, chunksize=chunksize, group_by=group_by, extra_group_by=extra_group_by
+        file_path, column, chunksize=chunksize, group_by=group_by,
+        extra_group_by=extra_group_by, encoding=encoding,
     )
 
 
@@ -47,6 +70,7 @@ def compute_histogram(
     value_min: Optional[float] = None,
     value_max: Optional[float] = None,
     chunksize: int = 200_000,
+    encoding: str = "utf-8",
 ) -> dict:
     """
     Tính histogram cho một cột số bằng phương pháp streaming 2 lượt đọc:
@@ -58,7 +82,7 @@ def compute_histogram(
     """
     if value_min is None or value_max is None:
         vmin, vmax = math.inf, -math.inf
-        for chunk in pd.read_csv(file_path, usecols=[column], chunksize=chunksize):
+        for chunk in pd.read_csv(file_path, usecols=[column], chunksize=chunksize, encoding=encoding):
             vals = pd.to_numeric(chunk[column], errors="coerce").dropna()
             if len(vals):
                 vmin = min(vmin, vals.min())
@@ -68,7 +92,7 @@ def compute_histogram(
     edges = np.linspace(value_min, value_max, bins + 1)
     counts = np.zeros(bins, dtype=np.int64)
 
-    for chunk in pd.read_csv(file_path, usecols=[column], chunksize=chunksize):
+    for chunk in pd.read_csv(file_path, usecols=[column], chunksize=chunksize, encoding=encoding):
         vals = pd.to_numeric(chunk[column], errors="coerce").dropna().to_numpy()
         if len(vals):
             c, _ = np.histogram(vals, bins=edges)

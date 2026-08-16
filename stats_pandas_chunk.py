@@ -26,6 +26,7 @@ def compute_stats_pandas_chunk(
     chunksize: int = 200_000,
     group_by: str | None = None,
     extra_group_by: str | None = None,
+    encoding: str = "utf-8",
 ) -> dict:
     """
     Tính thống kê tổng quan (+ theo nhóm, + theo `extra_group_by` nếu có,
@@ -55,7 +56,7 @@ def compute_stats_pandas_chunk(
 
     t0 = time.perf_counter()
 
-    reader = pd.read_csv(file_path, usecols=needed_cols, chunksize=chunksize, low_memory=False)
+    reader = pd.read_csv(file_path, usecols=needed_cols, chunksize=chunksize, low_memory=False, encoding=encoding)
     for chunk in reader:
         n_rows += len(chunk)
         numeric = pd.to_numeric(chunk[column], errors="coerce")
