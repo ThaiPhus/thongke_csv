@@ -1,0 +1,55 @@
+/* Hallmark · macrostructure: N/A (Streamlit app, no marketing macrostructure)
+ * genre: modern-minimal · theme: Cobalt (grotesk-sans, mono-paired, cool accent ~250°)
+ * nav: N3 side-rail (Streamlit sidebar) · footer: none (functional app, not a page)
+ * tone: technical · audience: professional/demo use · studied: no
+ */
+
+:root {
+  /* ---- Color: paper (cool-neutral, light band) ---- */
+  --color-paper: oklch(98.5% 0.003 240);
+  --color-paper-2: oklch(96% 0.005 240);
+  --color-paper-3: oklch(93% 0.008 240);
+  --color-border: oklch(88% 0.006 240);
+  --color-border-strong: oklch(78% 0.01 240);
+
+  /* ---- Color: ink ---- */
+  --color-ink: oklch(22% 0.015 250);
+  --color-ink-soft: oklch(45% 0.012 250);
+  --color-ink-faint: oklch(60% 0.01 250);
+
+  /* ---- Color: accent (cobalt, cool hue) ---- */
+  --color-accent: oklch(52% 0.16 250);
+  --color-accent-strong: oklch(42% 0.17 250);
+  --color-accent-soft: oklch(94% 0.03 250);
+
+  /* ---- Color: semantic ---- */
+  --color-success: oklch(60% 0.14 150);
+  --color-warning: oklch(70% 0.15 80);
+  --color-error: oklch(55% 0.19 25);
+  --color-focus: oklch(60% 0.19 250);
+
+  /* ---- Type ---- */
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* ---- Space (4pt scale) ---- */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* ---- Radius ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  /* ---- Motion ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+}
