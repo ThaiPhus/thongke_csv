@@ -483,12 +483,12 @@ with tab2:
         hist_img = histogram_chart(hist["edges"], hist["counts"], hist_title, p["value_column"])
         peak_i = hist["counts"].index(max(hist["counts"]))
         peak_range = f"{hist['edges'][peak_i]:,.0f} – {hist['edges'][peak_i + 1]:,.0f}"
-        target = row2_col1 if row2_col1 is not None else st
-        with target:
-            st.markdown(
-                _chart_card_html(hist_img, f"Tập trung nhiều nhất trong khoảng: <b>{peak_range}</b>"),
-                unsafe_allow_html=True,
-            )
+        hist_html = _chart_card_html(hist_img, f"Tập trung nhiều nhất trong khoảng: <b>{peak_range}</b>")
+        if row2_col1 is not None:
+            with row2_col1:
+                st.markdown(hist_html, unsafe_allow_html=True)
+        else:
+            st.markdown(hist_html, unsafe_allow_html=True)
         charts_for_report[hist_title] = hist_img
 
     if has_trend:
@@ -498,12 +498,12 @@ with tab2:
         first_v, last_v = trend["sum"][0], trend["sum"][-1]
         pct_change = ((last_v - first_v) / first_v * 100) if first_v else 0
         direction = "tăng" if pct_change >= 0 else "giảm"
-        target = row2_col2 if row2_col2 is not None else st
-        with target:
-            st.markdown(
-                _chart_card_html(trend_img, f"Từ đầu đến cuối kỳ: <b>{direction} {abs(pct_change):.1f}%</b>"),
-                unsafe_allow_html=True,
-            )
+        trend_html = _chart_card_html(trend_img, f"Từ đầu đến cuối kỳ: <b>{direction} {abs(pct_change):.1f}%</b>")
+        if row2_col2 is not None:
+            with row2_col2:
+                st.markdown(trend_html, unsafe_allow_html=True)
+        else:
+            st.markdown(trend_html, unsafe_allow_html=True)
         charts_for_report[trend_title] = trend_img
 
     if not charts_for_report:
