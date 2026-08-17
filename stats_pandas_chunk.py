@@ -77,13 +77,20 @@ def compute_stats_pandas_chunk(
             chunk[column] = numeric
             valid_chunk = chunk.dropna(subset=[column])
 
+            # QUAN TRỌNG: pandas groupby() mặc định BỎ QUA các dòng có giá trị
+            # NaN/thiếu ở cột nhóm — nếu không xử lý, các dòng đó "biến mất"
+            # khỏi bảng theo nhóm dù vẫn được tính trong thống kê tổng quan,
+            # khiến tổng các nhóm cộng lại không khớp với tổng toàn bộ.
+            # Gán nhãn rõ ràng "(Thiếu dữ liệu)" để giữ lại và người dùng biết.
             if group_by:
+                gcol = valid_chunk[group_by].fillna("(Thiếu dữ liệu)")
                 group_frames.append(
-                    valid_chunk.groupby(group_by)[column].agg(["count", "sum", "min", "max"])
+                    valid_chunk.groupby(gcol)[column].agg(["count", "sum", "min", "max"])
                 )
             if extra_group_by:
+                ecol = valid_chunk[extra_group_by].fillna("(Thiếu dữ liệu)")
                 trend_frames.append(
-                    valid_chunk.groupby(extra_group_by)[column].agg(["count", "sum"])
+                    valid_chunk.groupby(ecol)[column].agg(["count", "sum"])
                 )
 
     elapsed = time.perf_counter() - t0
@@ -114,14 +121,17 @@ def compute_stats_pandas_chunk(
         combined = pd.concat(group_frames)
         agg = combined.groupby(level=0).apply(
             lambda df: pd.Series({
-                "count_valid": df["count"].sum(),
+                "count_valid": int(df["count"].sum()),  # ép kiểu int rõ ràng, tránh hiển thị "150.0"
                 "min": df["min"].min(),
                 "max": df["max"].max(),
                 "mean": df["sum"].sum() / df["count"].sum(),
             })
         )
         result["group_by"] = group_by
-        result["by_group"] = agg.round(2).to_dict(orient="index")
+        by_group = agg.round(2).to_dict(orient="index")
+        for stats in by_group.values():
+            stats["count_valid"] = int(stats["count_valid"])  # .round(2) ở trên có thể trả lại float
+        result["by_group"] = by_group
 
     # --- REDUCE: gộp xu hướng theo cột phụ (vd: ngày) từ các chunk ---
     if extra_group_by and trend_frames:

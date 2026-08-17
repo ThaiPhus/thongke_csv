@@ -3,13 +3,12 @@ analytics.py
 ------------
 Lớp phân tích dùng chung cho cả CLI và ứng dụng web (app.py).
 Mọi hàm đều đọc file theo `chunksize` (Pandas) để không nạp toàn bộ
-file lớn vào RAM cùng lúc — kể cả khi build histogram hay xu hướng
-theo thời gian.
+file lớn vào RAM cùng lúc — kể cả khi build histogram.
 
 Các hàm chính:
-    - compute_overall_and_group_stats(...)  : tái sử dụng từ stats_pandas_chunk.py
+    - detect_encoding(...)                  : tự dò encoding file (UTF-8/Latin-1/CP1252...)
+    - compute_overall_and_group_stats(...)  : wrapper quanh stats_pandas_chunk.py
     - compute_histogram(...)                : histogram 2-pass, streaming
-    - compute_trend_by_key(...)             : tổng hợp giá trị theo 1 cột (vd: theo ngày)
 """
 
 from __future__ import annotations
@@ -99,41 +98,3 @@ def compute_histogram(
             counts += c
 
     return {"edges": edges.tolist(), "counts": counts.tolist()}
-
-
-def compute_trend_by_key(
-    file_path: str,
-    key_column: str,
-    value_column: str,
-    agg: str = "sum",
-    chunksize: int = 200_000,
-    top_n: Optional[int] = None,
-) -> dict:
-    """
-    Tổng hợp value_column theo key_column (vd: tổng doanh thu theo ngày),
-    đọc file theo chunk rồi gộp dần (giống bước Reduce trong MapReduce).
-    """
-    partials = []
-    for chunk in pd.read_csv(file_path, usecols=[key_column, value_column], chunksize=chunksize):
-        chunk = chunk.copy()
-        chunk[value_column] = pd.to_numeric(chunk[value_column], errors="coerce")
-        chunk = chunk.dropna(subset=[value_column])
-        partials.append(chunk.groupby(key_column)[value_column].agg(["sum", "count"]))
-
-    if not partials:
-        return {"keys": [], "values": []}
-
-    combined = pd.concat(partials).groupby(level=0).sum()
-
-    if agg == "sum":
-        series = combined["sum"]
-    elif agg == "mean":
-        series = combined["sum"] / combined["count"]
-    else:
-        raise ValueError(f"agg không hỗ trợ: {agg}")
-
-    series = series.sort_index()
-    if top_n:
-        series = series.tail(top_n)
-
-    return {"keys": [str(k) for k in series.index.tolist()], "values": [round(float(v), 2) for v in series.tolist()]}

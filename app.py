@@ -23,7 +23,6 @@ Chạy chương trình:
 
 import hashlib
 import tempfile
-import time
 from pathlib import Path
 
 import pandas as pd
@@ -177,6 +176,19 @@ st.markdown(
         color: var(--color-accent); letter-spacing: 0.05em;
     }
 
+    /* ---- Chart card (dashboard trực quan hoá) ---- */
+    .chart-card {
+        background: white; border: 1px solid var(--color-border); border-radius: var(--radius-lg);
+        padding: var(--space-md); margin-bottom: var(--space-lg);
+    }
+    .chart-card img { width: 100%; height: auto; display: block; }
+    .chart-insight {
+        font-family: var(--font-body); font-size: 0.85rem; color: var(--color-ink-soft);
+        margin-top: var(--space-sm); padding-top: var(--space-sm);
+        border-top: 1px solid var(--color-border);
+    }
+    .chart-insight b { color: var(--color-accent-strong); font-family: var(--font-mono); }
+
     :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 
     @media (prefers-reduced-motion: reduce) {
@@ -201,6 +213,12 @@ def _stat_cards_html(items: list[tuple[str, str]]) -> str:
         for label, value in items
     )
     return f'<div class="stat-grid">{cards}</div>'
+
+
+def _chart_card_html(img_data_uri: str, insight: str | None = None) -> str:
+    """Render một biểu đồ trong thẻ dashboard, kèm dòng insight ngắn (nếu có)."""
+    insight_html = f'<div class="chart-insight">{insight}</div>' if insight else ""
+    return f'<div class="chart-card"><img src="{img_data_uri}" />{insight_html}</div>'
 
 
 TMP_DIR = Path(tempfile.gettempdir()) / "thongke_csv_app"
@@ -277,13 +295,9 @@ with st.sidebar:
 
     if not tmp_path.exists():
         with st.spinner("Đang lưu file..."):
-            t0 = time.perf_counter()
             with open(tmp_path, "wb") as f:
                 f.write(file_bytes)
-            save_time = time.perf_counter() - t0
         _cleanup_old_temp_files(tmp_path)
-    else:
-        save_time = 0.0
 
     file_size_mb = tmp_path.stat().st_size / (1024 * 1024)
 
@@ -365,6 +379,17 @@ if "analysis_params" not in st.session_state:
 
 p = st.session_state["analysis_params"]
 
+# QUAN TRỌNG: nếu người dùng đã chọn file MỚI ở sidebar nhưng chưa bấm lại
+# "Chạy phân tích", đừng lặng lẽ hiển thị kết quả của file CŨ — dễ gây
+# hiểu nhầm là kết quả thuộc về file đang chọn hiện tại.
+if p["file_hash"] != file_hash:
+    st.warning(
+        f"⚠️ Bạn đã chọn file khác (**{uploaded_file.name}**) nhưng kết quả dưới đây vẫn "
+        f"đang là của file trước đó (**{p['file_name']}**). Bấm lại **Chạy phân tích** ở "
+        f"thanh bên trái để cập nhật."
+    )
+    st.stop()
+
 try:
     with st.spinner("Đang đọc và tính toán (lượt quét 1/…)..."):
         result = _cached_overall_and_group_stats(
@@ -417,31 +442,69 @@ with tab1:
 # --- TAB 2: Biểu đồ ---
 charts_for_report = {}
 with tab2:
-    if p["group_col"]:
+    has_group = bool(p["group_col"])
+    has_trend = bool(p["date_col"]) and "trend" in result and result["trend"]["keys"]
+
+    if has_group:
         labels = list(result["by_group"].keys())
         means = [s["mean"] for s in result["by_group"].values()]
         counts = [s["count_valid"] for s in result["by_group"].values()]
 
+        # Insight tự động: nhóm cao nhất theo trung bình, nhóm chiếm tỉ trọng lớn nhất
+        top_mean_label = labels[means.index(max(means))]
+        top_count_label = labels[counts.index(max(counts))]
+        top_count_pct = 100 * max(counts) / sum(counts) if sum(counts) else 0
+
         c1, c2 = st.columns(2)
         with c1:
-            bar_img = bar_chart_by_group(labels, means, f"Trung bình {p['value_column']} theo {p['group_col']}", p["value_column"])
-            st.image(bar_img)
-            charts_for_report[f"Trung bình {p['value_column']} theo {p['group_col']}"] = bar_img
+            bar_title = f"Trung bình {p['value_column']} theo {p['group_col']}"
+            bar_img = bar_chart_by_group(labels, means, bar_title, p["value_column"])
+            st.markdown(
+                _chart_card_html(bar_img, f"Cao nhất: <b>{top_mean_label}</b> ({max(means):,.2f})"),
+                unsafe_allow_html=True,
+            )
+            charts_for_report[bar_title] = bar_img
         with c2:
-            pie_img = pie_chart(labels, counts, f"Tỉ trọng số lượng bản ghi theo {p['group_col']}")
-            st.image(pie_img)
-            charts_for_report[f"Tỉ trọng số lượng bản ghi theo {p['group_col']}"] = pie_img
+            pie_title = f"Tỉ trọng số lượng bản ghi theo {p['group_col']}"
+            pie_img = pie_chart(labels, counts, pie_title)
+            st.markdown(
+                _chart_card_html(pie_img, f"Chiếm ưu thế: <b>{top_count_label}</b> ({top_count_pct:.1f}%)"),
+                unsafe_allow_html=True,
+            )
+            charts_for_report[pie_title] = pie_img
+
+    if hist is not None and has_trend:
+        row2_col1, row2_col2 = st.columns(2)
+    else:
+        row2_col1 = row2_col2 = None
 
     if hist is not None:
-        hist_img = histogram_chart(hist["edges"], hist["counts"], f"Phân phối giá trị của {p['value_column']}", p["value_column"])
-        st.image(hist_img)
-        charts_for_report[f"Phân phối giá trị của {p['value_column']}"] = hist_img
+        hist_title = f"Phân phối giá trị của {p['value_column']}"
+        hist_img = histogram_chart(hist["edges"], hist["counts"], hist_title, p["value_column"])
+        peak_i = hist["counts"].index(max(hist["counts"]))
+        peak_range = f"{hist['edges'][peak_i]:,.0f} – {hist['edges'][peak_i + 1]:,.0f}"
+        target = row2_col1 if row2_col1 is not None else st
+        with target:
+            st.markdown(
+                _chart_card_html(hist_img, f"Tập trung nhiều nhất trong khoảng: <b>{peak_range}</b>"),
+                unsafe_allow_html=True,
+            )
+        charts_for_report[hist_title] = hist_img
 
-    if p["date_col"] and "trend" in result and result["trend"]["keys"]:
+    if has_trend:
         trend = result["trend"]
-        trend_img = line_chart_trend(trend["keys"], trend["sum"], f"Xu hướng tổng {p['value_column']} theo {p['date_col']}", p["value_column"])
-        st.image(trend_img)
-        charts_for_report[f"Xu hướng tổng {p['value_column']} theo {p['date_col']}"] = trend_img
+        trend_title = f"Xu hướng tổng {p['value_column']} theo {p['date_col']}"
+        trend_img = line_chart_trend(trend["keys"], trend["sum"], trend_title, p["value_column"])
+        first_v, last_v = trend["sum"][0], trend["sum"][-1]
+        pct_change = ((last_v - first_v) / first_v * 100) if first_v else 0
+        direction = "tăng" if pct_change >= 0 else "giảm"
+        target = row2_col2 if row2_col2 is not None else st
+        with target:
+            st.markdown(
+                _chart_card_html(trend_img, f"Từ đầu đến cuối kỳ: <b>{direction} {abs(pct_change):.1f}%</b>"),
+                unsafe_allow_html=True,
+            )
+        charts_for_report[trend_title] = trend_img
 
     if not charts_for_report:
         st.info("Chưa có biểu đồ nào — hãy chọn cột nhóm/thời gian hoặc bật histogram ở thanh bên trái.")
