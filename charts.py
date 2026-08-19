@@ -6,8 +6,11 @@ dạng base64 (data URI) để có thể:
     - hiển thị trực tiếp trong Streamlit (nhúng trong thẻ .chart-card)
     - nhúng thẳng vào file báo cáo HTML (không cần lưu file ảnh riêng)
 
-Bảng màu đồng bộ với theme Cobalt (xem tokens.css) — dùng chung một họ
-màu xanh lạnh/tím cho toàn bộ dashboard thay vì màu rời rạc mỗi biểu đồ.
+Biểu đồ 1 chuỗi số liệu (cột, histogram, đường xu hướng) dùng MỘT màu
+accent Cobalt duy nhất để không gây hiểu nhầm màu sắc mang ý nghĩa phân
+loại. Donut (nhiều nhóm) dùng bảng màu ĐỊNH TÍNH đa dạng hơn (xem
+QUALITATIVE_PALETTE) — ưu tiên độ tương phản giữa các màu để dễ phân biệt
+bằng mắt hơn là giữ đúng một họ màu xanh/tím dễ na ná nhau.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from typing import Sequence
 import matplotlib
 matplotlib.use("Agg")  # backend không cần màn hình, phù hợp môi trường server
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 # ---- Bảng màu Cobalt (xấp xỉ hex của các token oklch trong tokens.css) ----
 ACCENT = "#3457D5"
@@ -27,9 +31,19 @@ ACCENT_SOFT = "#DCE6FB"
 INK = "#232B3D"
 INK_SOFT = "#6B7690"
 GRID = "#E6E9F2"
+NEUTRAL_OTHER = "#94A3B8"  # màu riêng cho lát "Khác" — luôn xám trung tính, không lẫn với nhóm thật
 
-# Bảng màu định tính (nhiều nhóm) — cùng họ xanh lạnh/tím, tránh màu chỏi nhau
-QUALITATIVE_PALETTE = ["#3457D5", "#00A6A6", "#6C63FF", "#2EC4B6", "#5C7AEA", "#94A3B8"]
+# Bảng màu ĐỊNH TÍNH (nhiều nhóm, vd donut) — ưu tiên độ tương phản giữa các
+# màu để dễ phân biệt bằng mắt, thay vì cùng một họ xanh/tím na ná nhau.
+QUALITATIVE_PALETTE = [
+    "#3457D5",  # xanh dương (accent chính)
+    "#DC7B22",  # cam đất
+    "#0E9594",  # xanh ngọc đậm
+    "#B8336A",  # hồng mận
+    "#6C63FF",  # tím
+    "#3F9142",  # xanh lá
+    "#C9A227",  # vàng đồng
+]
 
 plt.rcParams.update({
     "figure.facecolor": "white",
@@ -68,14 +82,40 @@ def _clean_axes(ax) -> None:
     ax.set_axisbelow(True)
 
 
+def _readable_number(x: float, _pos=None) -> str:
+    """Định dạng số trên trục dễ đọc: 1.200.000 -> '1.2M', 850.000 -> '850K'
+    thay vì ký hiệu khoa học mặc định của matplotlib (vd '1e6') vốn khó hiểu
+    với người xem không rành kỹ thuật."""
+    ax_ = abs(x)
+    if ax_ >= 1_000_000_000:
+        return f"{x / 1_000_000_000:,.1f}B".replace(".0B", "B")
+    if ax_ >= 1_000_000:
+        return f"{x / 1_000_000:,.1f}M".replace(".0M", "M")
+    if ax_ >= 1_000:
+        return f"{x / 1_000:,.0f}K"
+    return f"{x:,.0f}"
+
+
+def _use_readable_y_axis(ax) -> None:
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_readable_number))
+
+
 def bar_chart_by_group(labels: Sequence[str], values: Sequence[float], title: str, ylabel: str) -> str:
+    """
+    Biểu đồ cột dùng MỘT màu chủ đạo duy nhất (không tô nhiều màu theo từng
+    cột) — vì đây là 1 chuỗi số liệu duy nhất, tô nhiều màu chỉ khiến người
+    xem tưởng lầm màu sắc mang ý nghĩa phân loại trong khi thực ra không.
+    Cột có giá trị cao nhất được tô đậm hơn để làm điểm nhấn.
+    """
     fig, ax = plt.subplots(figsize=(7, 4.2))
-    colors = [QUALITATIVE_PALETTE[i % len(QUALITATIVE_PALETTE)] for i in range(len(labels))]
+    max_idx = values.index(max(values)) if len(values) else -1
+    colors = [ACCENT_STRONG if i == max_idx else ACCENT for i in range(len(labels))]
     bars = ax.bar(labels, values, color=colors, width=0.6, zorder=3)
     ax.set_title(title, pad=12)
     ax.set_ylabel(ylabel)
     ax.tick_params(axis="x", rotation=25)
     _clean_axes(ax)
+    _use_readable_y_axis(ax)
     for b in bars:
         h = b.get_height()
         ax.annotate(f"{h:,.0f}", (b.get_x() + b.get_width() / 2, h),
@@ -138,6 +178,7 @@ def histogram_chart(edges: Sequence[float], counts: Sequence[int], title: str, x
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Số lượng bản ghi")
     _clean_axes(ax)
+    _use_readable_y_axis(ax)
 
     if clipped:
         ax.set_xlim(edges[0], xlim_max)
@@ -161,6 +202,7 @@ def line_chart_trend(x_labels: Sequence[str], values: Sequence[float], title: st
     ax.set_ylabel(ylabel)
     ax.tick_params(axis="x", rotation=45)
     _clean_axes(ax)
+    _use_readable_y_axis(ax)
     # Chỉ hiện tối đa ~15 nhãn trục X để không bị rối khi có nhiều ngày
     step = max(1, len(x_labels) // 15)
     ax.set_xticks(list(x_pos)[::step])
@@ -197,7 +239,7 @@ def pie_chart(labels: Sequence[str], values: Sequence[float], title: str, top_n:
     palette_i = 0
     for label in plot_labels:
         if label == "Khác":
-            colors.append("#B8C0D0")
+            colors.append(NEUTRAL_OTHER)
         else:
             colors.append(QUALITATIVE_PALETTE[palette_i % len(QUALITATIVE_PALETTE)])
             palette_i += 1
@@ -220,8 +262,12 @@ def pie_chart(labels: Sequence[str], values: Sequence[float], title: str, top_n:
     ax.text(0, 0.06, f"{total:,.0f}", ha="center", va="center", fontsize=16, fontweight="bold", color=INK)
     ax.text(0, -0.12, "tổng số", ha="center", va="center", fontsize=8.5, color=INK_SOFT)
 
+    # Chú thích LUÔN kèm % (kể cả lát quá nhỏ để hiện số ngay trên biểu đồ)
+    # để không có nhóm nào "vô hình" — người xem luôn biết mỗi màu ứng với
+    # bao nhiêu phần trăm, không chỉ riêng những lát đủ lớn.
+    legend_labels = [f"{lbl} — {100 * v / total:.1f}%" if total else lbl for lbl, v in zip(plot_labels, plot_values)]
     ax.legend(
-        wedges, plot_labels, title="Nhóm",
+        wedges, legend_labels, title="Nhóm",
         loc="center left", bbox_to_anchor=(1.0, 0.5), fontsize=9, frameon=False,
     )
     ax.set_title(title, pad=12)

@@ -83,7 +83,7 @@ def build_html_report(
         {_group_table_html(result["by_group"])}
         """
 
-    html = f"""<!DOCTYPE html>
+    html_str = f"""<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8" />
@@ -159,11 +159,11 @@ def build_html_report(
 </body>
 </html>
 """
-    return html
+    return html_str
 
 
-def save_html_report(html: str, output_path: str) -> str:
+def save_html_report(html_str: str, output_path: str) -> str:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(html, encoding="utf-8")
+    path.write_text(html_str, encoding="utf-8")
     return str(path.resolve())

@@ -110,7 +110,7 @@ def compute_stats_stream(
         except (TypeError, ValueError):
             overall.invalid_count += 1
             if group_by:
-                key = row.get(group_by, "N/A")
+                key = row.get(group_by) or "(Thiếu dữ liệu)"
                 groups.setdefault(key, RunningStats())
                 groups[key].invalid_count += 1
             continue
@@ -118,7 +118,10 @@ def compute_stats_stream(
         overall.update(value)
 
         if group_by:
-            key = row.get(group_by, "N/A")
+            # Đồng nhất với stats_pandas_chunk.py: nhóm bị thiếu dữ liệu
+            # (không có cột, hoặc giá trị rỗng) được gán nhãn rõ ràng thay
+            # vì tạo thành một "nhóm" tên rỗng khó hiểu.
+            key = row.get(group_by) or "(Thiếu dữ liệu)"
             groups.setdefault(key, RunningStats())
             groups[key].update(value)
 

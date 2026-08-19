@@ -14,8 +14,9 @@ Chức năng:
 
 Giao diện: hệ thiết kế Hallmark (xem tokens.css) — genre modern-minimal,
 theme Cobalt (grotesk-sans + mono pairing, tông xanh lạnh, số liệu dùng
-font mono cho cảm giác "công cụ kỹ thuật"). Cấu hình gom vào sidebar
-(side-rail nav), kết quả hiển thị theo tab ở khu vực chính.
+font mono cho cảm giác "công cụ kỹ thuật"). Cấu hình + nút xuất báo cáo
+gom vào sidebar (side-rail nav); kết quả hiển thị trên MỘT trang duy nhất
+(không dùng tab) — cuộn từ thống kê tổng quan xuống biểu đồ trực quan.
 
 Chạy chương trình:
     streamlit run app.py
@@ -127,16 +128,6 @@ st.markdown(
     }
     .stButton > button:disabled { opacity: 0.5; }
 
-    /* ---- Tabs ---- */
-    .stTabs [data-baseweb="tab-list"] { gap: var(--space-lg); border-bottom: 1px solid var(--color-border); }
-    .stTabs [data-baseweb="tab"] {
-        font-family: var(--font-mono); font-size: 0.78rem; font-weight: 500;
-        letter-spacing: 0.04em; text-transform: uppercase;
-        color: var(--color-ink-faint); padding: var(--space-sm) 0; background: transparent;
-    }
-    .stTabs [aria-selected="true"] { color: var(--color-accent) !important; }
-    .stTabs [data-baseweb="tab-highlight"] { background-color: var(--color-accent); height: 2px; }
-
     /* ---- File uploader (dropzone) ---- */
     [data-testid="stFileUploaderDropzone"] {
         background: var(--color-paper); border: 1.5px dashed var(--color-border-strong) !important;
@@ -175,6 +166,15 @@ st.markdown(
         font-family: var(--font-mono); font-size: 0.72rem; font-weight: 600;
         color: var(--color-accent); letter-spacing: 0.05em;
     }
+
+    /* ---- Section heading (trang gộp 1, thay cho tab trước đây) ---- */
+    .section-heading {
+        display: flex; align-items: center; gap: var(--space-sm);
+        margin: var(--space-2xl) 0 var(--space-sm) 0;
+        padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-border);
+    }
+    .section-heading .step-label { font-size: 0.75rem; }
+    .section-heading h2 { margin: 0 !important; font-size: 1.3rem !important; }
 
     /* ---- Chart card (dashboard trực quan hoá) ---- */
     .chart-card {
@@ -219,6 +219,14 @@ def _chart_card_html(img_data_uri: str, insight: str | None = None) -> str:
     """Render một biểu đồ trong thẻ dashboard, kèm dòng insight ngắn (nếu có)."""
     insight_html = f'<div class="chart-insight">{insight}</div>' if insight else ""
     return f'<div class="chart-card"><img src="{img_data_uri}" />{insight_html}</div>'
+
+
+def _section_heading(step: str, title: str) -> None:
+    """Tiêu đề phân đoạn trên trang gộp 1 (thay cho tab trước đây)."""
+    st.markdown(
+        f'<div class="section-heading"><span class="step-label">{step}</span><h2>{title}</h2></div>',
+        unsafe_allow_html=True,
+    )
 
 
 TMP_DIR = Path(tempfile.gettempdir()) / "thongke_csv_app"
@@ -364,7 +372,7 @@ with st.sidebar:
 
 # ===========================================================================
 # KHU VỰC CHÍNH: kết quả phân tích (dùng session_state để giữ kết quả khi
-# chuyển tab / tương tác khác, không phải bấm lại "Chạy phân tích")
+# người dùng tương tác với các widget khác, không phải bấm lại "Chạy phân tích")
 # ===========================================================================
 st.markdown('<div class="app-eyebrow">Đề tài 2 · CN Phân tích dữ liệu lớn</div>', unsafe_allow_html=True)
 st.markdown('<div class="app-title">Thống kê dữ liệu từ file CSV</div>', unsafe_allow_html=True)
@@ -414,118 +422,124 @@ if p["want_histogram"]:
             overall["min"], overall["max"], p["chunksize"], p["encoding"],
         )
 
-tab1, tab2, tab3 = st.tabs(["THỐNG KÊ TỔNG QUAN", "BIỂU ĐỒ TRỰC QUAN", "XUẤT BÁO CÁO"])
+_section_heading("01", "Thống kê tổng quan")
 
-# --- TAB 1: Thống kê tổng quan ---
-with tab1:
-    st.markdown(
-        _stat_cards_html([
-            ("Tổng", f"{overall['sum']:,.0f}"),
-            ("Trung bình", f"{overall['mean']:,.2f}"),
-            ("Nhỏ nhất", f"{overall['min']:,.2f}"),
-            ("Lớn nhất", f"{overall['max']:,.2f}"),
-            ("Độ lệch chuẩn", f"{overall['stddev']:,.2f}"),
-        ]),
-        unsafe_allow_html=True,
-    )
+st.markdown(
+    _stat_cards_html([
+        ("Tổng", f"{overall['sum']:,.0f}"),
+        ("Trung bình", f"{overall['mean']:,.2f}"),
+        ("Nhỏ nhất", f"{overall['min']:,.2f}"),
+        ("Lớn nhất", f"{overall['max']:,.2f}"),
+        ("Độ lệch chuẩn", f"{overall['stddev']:,.2f}"),
+    ]),
+    unsafe_allow_html=True,
+)
 
-    st.caption(
-        f"Đã xử lý {result['rows_read']:,} dòng trong {result['elapsed_seconds']} giây "
-        f"({overall['count_invalid']:,} dòng lỗi/thiếu bị bỏ qua)."
-    )
+st.caption(
+    f"Đã xử lý {result['rows_read']:,} dòng trong {result['elapsed_seconds']} giây "
+    f"({overall['count_invalid']:,} dòng lỗi/thiếu bị bỏ qua)."
+)
+if p["group_col"]:
+    st.markdown(f"##### Thống kê theo '{p['group_col']}'")
+    group_df = pd.DataFrame(result["by_group"]).T
+    st.dataframe(group_df, width="stretch")
 
-    if p["group_col"]:
-        st.markdown(f"##### Thống kê theo '{p['group_col']}'")
-        group_df = pd.DataFrame(result["by_group"]).T
-        st.dataframe(group_df, width="stretch")
+# --- Biểu đồ trực quan ---
+_section_heading("02", "Biểu đồ trực quan")
 
-# --- TAB 2: Biểu đồ ---
 charts_for_report = {}
-with tab2:
-    has_group = bool(p["group_col"])
-    has_trend = bool(p["date_col"]) and "trend" in result and result["trend"]["keys"]
+has_group = bool(p["group_col"])
+has_trend = bool(p["date_col"]) and "trend" in result and result["trend"]["keys"]
 
-    if has_group:
-        labels = list(result["by_group"].keys())
-        means = [s["mean"] for s in result["by_group"].values()]
-        counts = [s["count_valid"] for s in result["by_group"].values()]
+if has_group:
+    labels = list(result["by_group"].keys())
+    means = [s["mean"] for s in result["by_group"].values()]
+    counts = [s["count_valid"] for s in result["by_group"].values()]
 
-        # Insight tự động: nhóm cao nhất theo trung bình, nhóm chiếm tỉ trọng lớn nhất
-        top_mean_label = labels[means.index(max(means))]
-        top_count_label = labels[counts.index(max(counts))]
-        top_count_pct = 100 * max(counts) / sum(counts) if sum(counts) else 0
+    # Insight tự động: nhóm cao nhất theo trung bình, nhóm chiếm tỉ trọng lớn nhất
+    top_mean_label = labels[means.index(max(means))]
+    top_count_label = labels[counts.index(max(counts))]
+    top_count_pct = 100 * max(counts) / sum(counts) if sum(counts) else 0
 
-        c1, c2 = st.columns(2)
-        with c1:
-            bar_title = f"Trung bình {p['value_column']} theo {p['group_col']}"
-            bar_img = bar_chart_by_group(labels, means, bar_title, p["value_column"])
-            st.markdown(
-                _chart_card_html(bar_img, f"Cao nhất: <b>{top_mean_label}</b> ({max(means):,.2f})"),
-                unsafe_allow_html=True,
-            )
-            charts_for_report[bar_title] = bar_img
-        with c2:
-            pie_title = f"Tỉ trọng số lượng bản ghi theo {p['group_col']}"
-            pie_img = pie_chart(labels, counts, pie_title)
-            st.markdown(
-                _chart_card_html(pie_img, f"Chiếm ưu thế: <b>{top_count_label}</b> ({top_count_pct:.1f}%)"),
-                unsafe_allow_html=True,
-            )
-            charts_for_report[pie_title] = pie_img
+    c1, c2 = st.columns(2)
+    with c1:
+        bar_title = f"Trung bình {p['value_column']} theo {p['group_col']}"
+        bar_img = bar_chart_by_group(labels, means, bar_title, p["value_column"])
+        st.markdown(
+            _chart_card_html(bar_img, f"Cao nhất: <b>{top_mean_label}</b> ({max(means):,.2f})"),
+            unsafe_allow_html=True,
+        )
+        charts_for_report[bar_title] = bar_img
+    with c2:
+        pie_title = f"Tỉ trọng số lượng bản ghi theo {p['group_col']}"
+        pie_img = pie_chart(labels, counts, pie_title)
+        st.markdown(
+            _chart_card_html(pie_img, f"Chiếm ưu thế: <b>{top_count_label}</b> ({top_count_pct:.1f}%)"),
+            unsafe_allow_html=True,
+        )
+        charts_for_report[pie_title] = pie_img
 
-    if hist is not None and has_trend:
-        row2_col1, row2_col2 = st.columns(2)
-    else:
-        row2_col1 = row2_col2 = None
+if hist is not None and has_trend:
+    row2_col1, row2_col2 = st.columns(2)
+else:
+    row2_col1 = row2_col2 = None
 
-    if hist is not None:
-        hist_title = f"Phân phối giá trị của {p['value_column']}"
-        hist_img = histogram_chart(hist["edges"], hist["counts"], hist_title, p["value_column"])
-        peak_i = hist["counts"].index(max(hist["counts"]))
-        peak_range = f"{hist['edges'][peak_i]:,.0f} – {hist['edges'][peak_i + 1]:,.0f}"
-        hist_html = _chart_card_html(hist_img, f"Tập trung nhiều nhất trong khoảng: <b>{peak_range}</b>")
-        if row2_col1 is not None:
-            with row2_col1:
-                st.markdown(hist_html, unsafe_allow_html=True)
-        else:
+if hist is not None:
+    hist_title = f"Phân phối giá trị của {p['value_column']}"
+    hist_img = histogram_chart(hist["edges"], hist["counts"], hist_title, p["value_column"])
+    peak_i = hist["counts"].index(max(hist["counts"]))
+    peak_range = f"{hist['edges'][peak_i]:,.0f} – {hist['edges'][peak_i + 1]:,.0f}"
+    hist_html = _chart_card_html(hist_img, f"Tập trung nhiều nhất trong khoảng: <b>{peak_range}</b>")
+    if row2_col1 is not None:
+        with row2_col1:
             st.markdown(hist_html, unsafe_allow_html=True)
-        charts_for_report[hist_title] = hist_img
+    else:
+        st.markdown(hist_html, unsafe_allow_html=True)
+    charts_for_report[hist_title] = hist_img
 
-    if has_trend:
-        trend = result["trend"]
-        trend_title = f"Xu hướng tổng {p['value_column']} theo {p['date_col']}"
-        trend_img = line_chart_trend(trend["keys"], trend["sum"], trend_title, p["value_column"])
-        first_v, last_v = trend["sum"][0], trend["sum"][-1]
-        pct_change = ((last_v - first_v) / first_v * 100) if first_v else 0
-        direction = "tăng" if pct_change >= 0 else "giảm"
-        trend_html = _chart_card_html(trend_img, f"Từ đầu đến cuối kỳ: <b>{direction} {abs(pct_change):.1f}%</b>")
-        if row2_col2 is not None:
-            with row2_col2:
-                st.markdown(trend_html, unsafe_allow_html=True)
-        else:
+if has_trend:
+    trend = result["trend"]
+    trend_title = f"Xu hướng tổng {p['value_column']} theo {p['date_col']}"
+    trend_img = line_chart_trend(trend["keys"], trend["sum"], trend_title, p["value_column"])
+    first_v, last_v = trend["sum"][0], trend["sum"][-1]
+    pct_change = ((last_v - first_v) / first_v * 100) if first_v else 0
+    direction = "tăng" if pct_change >= 0 else "giảm"
+    trend_html = _chart_card_html(trend_img, f"Từ đầu đến cuối kỳ: <b>{direction} {abs(pct_change):.1f}%</b>")
+    if row2_col2 is not None:
+        with row2_col2:
             st.markdown(trend_html, unsafe_allow_html=True)
-        charts_for_report[trend_title] = trend_img
+    else:
+        st.markdown(trend_html, unsafe_allow_html=True)
+    charts_for_report[trend_title] = trend_img
 
-    if not charts_for_report:
-        st.info("Chưa có biểu đồ nào — hãy chọn cột nhóm/thời gian hoặc bật histogram ở thanh bên trái.")
+if not charts_for_report:
+    st.info("Chưa có biểu đồ nào — hãy chọn cột nhóm/thời gian hoặc bật histogram ở thanh bên trái.")
 
-# --- TAB 3: Xuất báo cáo ---
-with tab3:
-    html_report = build_html_report(
-        file_name=p["file_name"],
-        column=p["value_column"],
-        result=result,
-        charts=charts_for_report,
-        group_by=p["group_col"],
-    )
+# --- Xem trước báo cáo (nút tải chính đặt ở sidebar — xem khối bên dưới) ---
+html_report = build_html_report(
+    file_name=p["file_name"],
+    column=p["value_column"],
+    result=result,
+    charts=charts_for_report,
+    group_by=p["group_col"],
+)
 
+_section_heading("03", "Xem trước báo cáo")
+st.caption("Bấm **Tải báo cáo HTML** ở thanh bên trái để tải file hoàn chỉnh.")
+with st.expander("Xem trước nội dung báo cáo"):
+    st.components.v1.html(html_report, height=600, scrolling=True)
+
+# ===========================================================================
+# SIDEBAR (tiếp) — nút xuất báo cáo, đặt ở cuối thanh cấu hình bên trái để
+# luôn trong tầm mắt / tầm tay thay vì phải cuộn tới cuối trang.
+# ===========================================================================
+with st.sidebar:
+    st.markdown('<div class="step-label">04 · XUẤT BÁO CÁO</div>', unsafe_allow_html=True)
     st.download_button(
         label="Tải báo cáo HTML",
         data=html_report,
         file_name=f"bao_cao_{Path(p['file_name']).stem}.html",
         mime="text/html",
         type="primary",
+        width="stretch",
     )
-
-    with st.expander("Xem trước nội dung báo cáo"):
-        st.components.v1.html(html_report, height=600, scrolling=True)

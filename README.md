@@ -35,8 +35,8 @@ streamlit run app.py
 Trình duyệt sẽ tự mở tại `http://localhost:8501`. Các bước sử dụng (ở sidebar):
 1. Chọn file CSV từ máy tính (tự động dò encoding UTF-8/Latin-1/CP1252).
 2. Chọn cột số cần thống kê, cột để nhóm (vd: `khu_vuc`), cột thời gian (vd: `ngay`).
-3. Bấm **"Chạy phân tích"** → xem 3 tab: Thống kê tổng quan / Biểu đồ trực quan / Xuất báo cáo.
-4. Ở tab "Xuất báo cáo", bấm **"Tải báo cáo HTML"** để tải file hoàn chỉnh (đính kèm được vào Phụ lục đồ án).
+3. Bấm **"Chạy phân tích"** → xem kết quả trên trang chính: Thống kê tổng quan → Biểu đồ trực quan → Xem trước báo cáo.
+4. Bấm **"Tải báo cáo HTML"** ở cuối thanh cấu hình bên trái để tải file hoàn chỉnh (đính kèm được vào Phụ lục đồ án).
 
 ### B. Chạy dòng lệnh (CLI) — dùng khi muốn benchmark hiệu năng thuần
 
