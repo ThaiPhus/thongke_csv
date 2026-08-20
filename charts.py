@@ -85,7 +85,13 @@ def _clean_axes(ax) -> None:
 def _readable_number(x: float, _pos=None) -> str:
     """Định dạng số trên trục dễ đọc: 1.200.000 -> '1.2M', 850.000 -> '850K'
     thay vì ký hiệu khoa học mặc định của matplotlib (vd '1e6') vốn khó hiểu
-    với người xem không rành kỹ thuật."""
+    với người xem không rành kỹ thuật.
+
+    QUAN TRỌNG: với số < 1000 (vd trung bình số lượng ~0.9, ~1.03), vẫn giữ
+    tối đa 2 chữ số thập phân thay vì làm tròn về số nguyên — nếu không,
+    dữ liệu dao động quanh 1 (như Qty trung bình) sẽ bị trục Y "san phẳng"
+    thành toàn số 0/1 giống hệt nhau, mất hết khả năng phân biệt.
+    """
     ax_ = abs(x)
     if ax_ >= 1_000_000_000:
         return f"{x / 1_000_000_000:,.1f}B".replace(".0B", "B")
@@ -93,33 +99,74 @@ def _readable_number(x: float, _pos=None) -> str:
         return f"{x / 1_000_000:,.1f}M".replace(".0M", "M")
     if ax_ >= 1_000:
         return f"{x / 1_000:,.0f}K"
-    return f"{x:,.0f}"
+    if float(x).is_integer():
+        return f"{x:,.0f}"
+    return f"{x:,.2f}".rstrip("0").rstrip(".")
 
 
 def _use_readable_y_axis(ax) -> None:
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_readable_number))
 
 
-def bar_chart_by_group(labels: Sequence[str], values: Sequence[float], title: str, ylabel: str) -> str:
+def bar_chart_by_group(labels: Sequence[str], values: Sequence[float], title: str, ylabel: str, top_n: int = 20) -> str:
     """
     Biểu đồ cột dùng MỘT màu chủ đạo duy nhất (không tô nhiều màu theo từng
     cột) — vì đây là 1 chuỗi số liệu duy nhất, tô nhiều màu chỉ khiến người
     xem tưởng lầm màu sắc mang ý nghĩa phân loại trong khi thực ra không.
     Cột có giá trị cao nhất được tô đậm hơn để làm điểm nhấn.
+
+    Khi có nhiều nhóm (nhãn dài hoặc >8 cột), nhãn trục X dễ chồng chéo lên
+    nhau — tự động rút gọn nhãn dài + tăng góc xoay để vẫn đọc được.
+
+    QUAN TRỌNG: nếu cột nhóm có độ đa dạng rất cao (vd mã SKU với hàng nghìn
+    giá trị khác nhau), vẽ hết toàn bộ cột sẽ vừa CỰC KỲ CHẬM (nhiều chục
+    giây, dễ khiến hosting coi app "treo") vừa cho ra ảnh không thể đọc nổi.
+    Vì vậy chỉ vẽ tối đa `top_n` nhóm có giá trị cao nhất, kèm chú thích số
+    nhóm còn lại không hiển thị.
     """
-    fig, ax = plt.subplots(figsize=(7, 4.2))
+    pairs = sorted(zip(labels, values), key=lambda p: p[1], reverse=True)
+    omitted = 0
+    if len(pairs) > top_n:
+        omitted = len(pairs) - top_n
+        pairs = pairs[:top_n]
+    labels = [p[0] for p in pairs]
+    values = [p[1] for p in pairs]
+
+    n = len(labels)
+    # Rút gọn nhãn quá dài (vd "Shipped - Waiting for Pick Up" -> "Shipped - Waiti…")
+    # để không chiếm hết chỗ khi có nhiều cột.
+    max_label_len = 16 if n > 8 else 22
+    display_labels = [lbl if len(lbl) <= max_label_len else lbl[: max_label_len - 1] + "…" for lbl in labels]
+
+    fig_width = max(7.0, min(0.8 * n, 16))
+    fig, ax = plt.subplots(figsize=(fig_width, 4.6))
     max_idx = values.index(max(values)) if len(values) else -1
     colors = [ACCENT_STRONG if i == max_idx else ACCENT for i in range(len(labels))]
-    bars = ax.bar(labels, values, color=colors, width=0.6, zorder=3)
-    ax.set_title(title, pad=12)
+    bars = ax.bar(display_labels, values, color=colors, width=0.6, zorder=3)
+    title_full = title if not omitted else f"{title} (Top {top_n})"
+    ax.set_title(title_full, pad=12)
     ax.set_ylabel(ylabel)
-    ax.tick_params(axis="x", rotation=25)
+    rotation = 60 if n > 8 else 25
+    ax.tick_params(axis="x", rotation=rotation)
+    for label in ax.get_xticklabels():
+        label.set_ha("right")
+        label.set_rotation_mode("anchor")
     _clean_axes(ax)
     _use_readable_y_axis(ax)
+    annotation_fontsize = 7.5 if n > 10 else 8.5
     for b in bars:
         h = b.get_height()
-        ax.annotate(f"{h:,.0f}", (b.get_x() + b.get_width() / 2, h),
-                    ha="center", va="bottom", fontsize=8.5, color=INK, fontweight="medium")
+        label_text = f"{h:,.0f}" if float(h).is_integer() else f"{h:,.2f}".rstrip("0").rstrip(".")
+        ax.annotate(label_text, (b.get_x() + b.get_width() / 2, h),
+                    ha="center", va="bottom", fontsize=annotation_fontsize, color=INK, fontweight="medium")
+
+    if omitted:
+        ax.text(
+            0.99, 0.97, f"* Chỉ hiện top {top_n} nhóm cao nhất\n  (còn {omitted:,} nhóm khác không hiển thị)",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8, color=INK_SOFT,
+            bbox=dict(boxstyle="round", fc="white", ec=GRID, alpha=0.95),
+        )
+
     fig.tight_layout()
     return _fig_to_base64(fig)
 

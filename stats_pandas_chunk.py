@@ -20,6 +20,20 @@ from pathlib import Path
 import pandas as pd
 
 
+def _to_group_label(val) -> str:
+    """
+    Chuẩn hoá giá trị cột nhóm thành CHUỖI — bắt buộc, vì charts.py giả định
+    nhãn nhóm luôn là str (so sánh với "Khác", cắt chuỗi rút gọn nhãn dài...).
+    Nếu group_by là một cột SỐ (vd mã bưu điện), giá trị đọc về có thể là
+    float (400001.0) — bỏ đuôi ".0" cho gọn thay vì hiện nguyên "400001.0".
+    """
+    if pd.isna(val):
+        return "(Thiếu dữ liệu)"
+    if isinstance(val, float) and val.is_integer():
+        return str(int(val))
+    return str(val)
+
+
 def compute_stats_pandas_chunk(
     file_path: str,
     column: str,
@@ -59,7 +73,11 @@ def compute_stats_pandas_chunk(
     reader = pd.read_csv(file_path, usecols=needed_cols, chunksize=chunksize, low_memory=False, encoding=encoding)
     for chunk in reader:
         n_rows += len(chunk)
-        numeric = pd.to_numeric(chunk[column], errors="coerce")
+        # QUAN TRỌNG: pandas coi cột kiểu bool (True/False) là "đã là số" nên
+        # pd.to_numeric() để nguyên dtype bool, không ép kiểu — dẫn tới lỗi
+        # "numpy.bool doesn't define __round__" khi tính toán thống kê phía
+        # sau. Ép rõ về float64 để luôn là số thực sự.
+        numeric = pd.to_numeric(chunk[column], errors="coerce").astype("float64")
         invalid_count += int(numeric.isna().sum())
         valid = numeric.dropna()
 
@@ -83,12 +101,12 @@ def compute_stats_pandas_chunk(
             # khiến tổng các nhóm cộng lại không khớp với tổng toàn bộ.
             # Gán nhãn rõ ràng "(Thiếu dữ liệu)" để giữ lại và người dùng biết.
             if group_by:
-                gcol = valid_chunk[group_by].fillna("(Thiếu dữ liệu)")
+                gcol = valid_chunk[group_by].map(_to_group_label)
                 group_frames.append(
                     valid_chunk.groupby(gcol)[column].agg(["count", "sum", "min", "max"])
                 )
             if extra_group_by:
-                ecol = valid_chunk[extra_group_by].fillna("(Thiếu dữ liệu)")
+                ecol = valid_chunk[extra_group_by].map(_to_group_label)
                 trend_frames.append(
                     valid_chunk.groupby(ecol)[column].agg(["count", "sum"])
                 )

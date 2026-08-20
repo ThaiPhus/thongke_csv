@@ -82,7 +82,7 @@ def compute_histogram(
     if value_min is None or value_max is None:
         vmin, vmax = math.inf, -math.inf
         for chunk in pd.read_csv(file_path, usecols=[column], chunksize=chunksize, encoding=encoding):
-            vals = pd.to_numeric(chunk[column], errors="coerce").dropna()
+            vals = pd.to_numeric(chunk[column], errors="coerce").astype("float64").dropna()
             if len(vals):
                 vmin = min(vmin, vals.min())
                 vmax = max(vmax, vals.max())
@@ -92,7 +92,7 @@ def compute_histogram(
     counts = np.zeros(bins, dtype=np.int64)
 
     for chunk in pd.read_csv(file_path, usecols=[column], chunksize=chunksize, encoding=encoding):
-        vals = pd.to_numeric(chunk[column], errors="coerce").dropna().to_numpy()
+        vals = pd.to_numeric(chunk[column], errors="coerce").astype("float64").dropna().to_numpy()
         if len(vals):
             c, _ = np.histogram(vals, bins=edges)
             counts += c
