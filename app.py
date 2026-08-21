@@ -259,10 +259,10 @@ def _cached_preview(file_hash, file_path, encoding):
 
 
 @st.cache_data(show_spinner=False)
-def _cached_overall_and_group_stats(file_hash, file_path, column, group_by, extra_group_by, chunksize, encoding):
+def _cached_overall_and_group_stats(file_hash, file_path, column, group_by, extra_group_by, date_period, chunksize, encoding):
     return compute_overall_and_group_stats(
         file_path, column, group_by=group_by, extra_group_by=extra_group_by,
-        chunksize=chunksize, encoding=encoding,
+        date_period=date_period, chunksize=chunksize, encoding=encoding,
     )
 
 
@@ -356,6 +356,12 @@ with st.sidebar:
     date_col = st.selectbox("Cột thời gian để xem xu hướng (tuỳ chọn)", date_options)
     date_col = None if date_col == "(không có)" else date_col
 
+    date_period = None
+    if date_col:
+        PERIOD_LABELS = {"Ngày": "day", "Tuần": "week", "Tháng": "month", "Quý": "quarter", "Năm": "year"}
+        period_label = st.selectbox("Báo cáo theo kỳ", list(PERIOD_LABELS.keys()), index=0)
+        date_period = PERIOD_LABELS[period_label]
+
     st.markdown('<div class="step-label">03 · TUỲ CHỌN NÂNG CAO</div>', unsafe_allow_html=True)
     chunksize = st.slider("Kích thước chunk (số dòng/lần đọc)", 50_000, 1_000_000, 300_000, step=50_000)
     want_histogram = st.checkbox("Tính histogram phân phối", value=True)
@@ -366,6 +372,7 @@ with st.sidebar:
         st.session_state["analysis_params"] = dict(
             file_hash=file_hash, tmp_path=str(tmp_path), encoding=encoding,
             value_column=value_column, group_col=group_col, date_col=date_col,
+            date_period=date_period, date_period_label=(period_label if date_col else None),
             chunksize=chunksize, want_histogram=want_histogram,
             file_name=uploaded_file.name,
         )
@@ -402,7 +409,7 @@ try:
     with st.spinner("Đang đọc và tính toán (lượt quét 1/…)..."):
         result = _cached_overall_and_group_stats(
             p["file_hash"], p["tmp_path"], p["value_column"], p["group_col"],
-            p["date_col"], p["chunksize"], p["encoding"],
+            p["date_col"], p.get("date_period"), p["chunksize"], p["encoding"],
         )
 except Exception as e:
     st.error(f"Lỗi khi tính toán thống kê: {e}")
@@ -499,7 +506,8 @@ if hist is not None:
 
 if has_trend:
     trend = result["trend"]
-    trend_title = f"Xu hướng tổng {p['value_column']} theo {p['date_col']}"
+    period_suffix = f" theo {p['date_period_label']}" if p.get("date_period_label") else f" theo {p['date_col']}"
+    trend_title = f"Xu hướng tổng {p['value_column']}{period_suffix}"
     trend_img = line_chart_trend(trend["keys"], trend["sum"], trend_title, p["value_column"])
     first_v, last_v = trend["sum"][0], trend["sum"][-1]
     pct_change = ((last_v - first_v) / first_v * 100) if first_v else 0

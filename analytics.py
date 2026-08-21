@@ -48,6 +48,7 @@ def compute_overall_and_group_stats(
     column: str,
     group_by: Optional[str] = None,
     extra_group_by: Optional[str] = None,
+    date_period: Optional[str] = None,
     chunksize: int = 200_000,
     encoding: str = "utf-8",
 ) -> dict:
@@ -55,10 +56,13 @@ def compute_overall_and_group_stats(
     Wrapper mỏng quanh stats_pandas_chunk để dùng chung trong app.py.
     `extra_group_by` (vd: cột ngày) được tính GỘP trong cùng lượt đọc này
     (không phải đọc file thêm một lần riêng) để giảm số lượt quét file lớn.
+    `date_period` ("day"/"week"/"month"/"quarter"/"year"): nếu có, gộp
+    `extra_group_by` theo kỳ báo cáo tương ứng thay vì theo đúng giá trị
+    thô trong file — xem stats_pandas_chunk.DATE_PERIODS.
     """
     return compute_stats_pandas_chunk(
         file_path, column, chunksize=chunksize, group_by=group_by,
-        extra_group_by=extra_group_by, encoding=encoding,
+        extra_group_by=extra_group_by, date_period=date_period, encoding=encoding,
     )
 
 
@@ -78,6 +82,15 @@ def compute_histogram(
         np.histogram cục bộ rồi cộng dồn vào mảng đếm chung.
     Nhờ đó không cần giữ toàn bộ cột dữ liệu trong RAM để vẽ histogram,
     kể cả khi file có hàng chục triệu dòng.
+
+    QUAN TRỌNG: `value_min`/`value_max` truyền vào thường lấy từ kết quả
+    thống kê tổng quan (vd overall["min"]/overall["max"]), vốn đã bị làm
+    tròn 2 chữ số thập phân — có thể LỆCH so với giá trị thật trong file
+    (vd giá trị thật 1048.3783... bị làm tròn thành 1048.38, tức là LỚN
+    HƠN giá trị thật). Nếu không xử lý, np.histogram() sẽ ÂM THẦM LOẠI BỎ
+    những giá trị nằm ngoài khoảng [value_min, value_max] do lệch làm tròn
+    này, khiến tổng số đếm của histogram không khớp tổng số dòng hợp lệ.
+    Do đó luôn "kẹp" (clip) dữ liệu vào đúng khoảng trước khi đếm bin.
     """
     if value_min is None or value_max is None:
         vmin, vmax = math.inf, -math.inf
@@ -94,6 +107,7 @@ def compute_histogram(
     for chunk in pd.read_csv(file_path, usecols=[column], chunksize=chunksize, encoding=encoding):
         vals = pd.to_numeric(chunk[column], errors="coerce").astype("float64").dropna().to_numpy()
         if len(vals):
+            vals = np.clip(vals, value_min, value_max)
             c, _ = np.histogram(vals, bins=edges)
             counts += c
 

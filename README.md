@@ -19,9 +19,37 @@ thongke_csv/
 ├── stats_stream.py         # CLI cách 1: thuần Python, Generator + Welford's algorithm (RAM thấp)
 ├── stats_pandas_chunk.py   # CLI cách 2 + lõi tính toán của web app: Pandas + chunksize
 ├── benchmark.py            # Đo & so sánh thời gian / RAM giữa 2 cách CLI
-├── requirements.txt        # Thư viện cần cài
+├── requirements.txt        # Thư viện cần cài để CHẠY ứng dụng
+├── requirements-dev.txt    # Thêm pytest — cần khi muốn CHẠY TEST
+├── pytest.ini              # Cấu hình pytest
+├── tests/                  # Unit test + test tích hợp (xem mục "Kiểm thử" bên dưới)
 └── .streamlit/config.toml  # Giới hạn upload, theme màu cho Streamlit
 ```
+
+## Kiểm thử (testing)
+
+```bash
+pip install -r requirements-dev.txt
+pytest -v
+```
+
+Bộ test gồm:
+- **Unit test cô lập** (`tests/test_stats_pandas_chunk.py`, `test_analytics.py`,
+  `test_charts.py`, `test_report_generator.py`) — dùng dữ liệu tổng hợp tự
+  sinh, chạy được ở bất kỳ máy nào, bao trùm toàn bộ các lỗi từng phát hiện
+  trong quá trình phát triển (nhóm bị NaN, cột boolean, group_by trên cột
+  số, min/max làm tròn làm mất dữ liệu biên trong histogram, sắp xếp ngày
+  sai khi qua ranh giới năm, hiệu năng khi có hàng nghìn nhóm, escape HTML...)
+  để đảm bảo các lỗi này **không bao giờ tái diễn**.
+- **Test tích hợp với dữ liệu thật** (`tests/test_real_dataset.py`) — chạy
+  toàn bộ pipeline trên một file CSV thật của bạn. Đặt file vào
+  `tests/data/` (xem `tests/data/README.md`) hoặc khai báo qua biến môi
+  trường, rồi chạy:
+  ```bash
+  AMAZON_CSV_PATH=/duong/dan/file.csv pytest tests/test_real_dataset.py -v
+  ```
+  Các test này tự **SKIP** (không FAIL) nếu không tìm thấy file — không ảnh
+  hưởng tới các unit test khác.
 
 ## Cách chạy
 
@@ -34,7 +62,8 @@ streamlit run app.py
 
 Trình duyệt sẽ tự mở tại `http://localhost:8501`. Các bước sử dụng (ở sidebar):
 1. Chọn file CSV từ máy tính (tự động dò encoding UTF-8/Latin-1/CP1252).
-2. Chọn cột số cần thống kê, cột để nhóm (vd: `khu_vuc`), cột thời gian (vd: `ngay`).
+2. Chọn cột số cần thống kê, cột để nhóm (vd: `khu_vuc`), cột thời gian (vd: `ngay`) —
+   khi có cột thời gian, chọn thêm **kỳ báo cáo**: Ngày / Tuần / Tháng / Quý / Năm.
 3. Bấm **"Chạy phân tích"** → xem kết quả trên trang chính: Thống kê tổng quan → Biểu đồ trực quan → Xem trước báo cáo.
 4. Bấm **"Tải báo cáo HTML"** ở cuối thanh cấu hình bên trái để tải file hoàn chỉnh (đính kèm được vào Phụ lục đồ án).
 
@@ -75,6 +104,12 @@ python benchmark.py --file data/doanh_thu.csv --column doanh_thu
   - **Histogram streaming 2 lượt đọc** (`analytics.py`) — lượt 1 lấy min/max,
     lượt 2 cộng dồn `np.histogram` từng chunk, không cần giữ toàn bộ cột
     dữ liệu trong RAM để vẽ biểu đồ phân phối.
+  - **Phân kỳ báo cáo (ngày/tuần/tháng/quý/năm)** (`stats_pandas_chunk.py`,
+    hàm `_bucket_date_series`) — parse cột ngày về datetime thật rồi gộp
+    theo nhãn chuẩn ISO (vd `2022-W14`, `2022-Q2`) để LUÔN sắp đúng thứ tự
+    thời gian khi sort chuỗi, kể cả khi dữ liệu trải qua nhiều năm. Định
+    dạng ngày được dò một lần duy nhất trên mẫu nhỏ trước khi đọc file
+    theo chunk, tránh phải suy luận lại (chậm) ở mỗi chunk.
 - 3.4 Cài đặt:
   - `stats_stream.py` (generator, thuần Python) so với `stats_pandas_chunk.py`
     (kiểu Map–Reduce: mỗi chunk tính cục bộ rồi gộp lại) — cả hai đều chỉ

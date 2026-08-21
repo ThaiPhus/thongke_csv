@@ -5,3 +5,6 @@ test_output/
 .streamlit/secrets.toml
 *.csv
 .DS_Store
+.pytest_cache/
+.coverage
+htmlcov/

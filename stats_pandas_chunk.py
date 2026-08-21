@@ -34,23 +34,118 @@ def _to_group_label(val) -> str:
     return str(val)
 
 
+DATE_PERIODS = ("day", "week", "month", "quarter", "year")
+
+# Vài định dạng ngày phổ biến hay gặp trong file CSV xuất từ Excel/hệ thống
+# khác (không theo chuẩn ISO). Dò 1 LẦN DUY NHẤT trên một mẫu nhỏ trước khi
+# đọc file theo chunk, thay vì để pandas tự suy luận lại (chậm, phải fallback
+# sang dateutil từng phần tử) ở MỖI chunk.
+_COMMON_DATE_FORMATS = [
+    "%m-%d-%y", "%d-%m-%y", "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y",
+    "%Y/%m/%d", "%d-%m-%Y", "%m-%d-%Y", "%d.%m.%Y", "%Y-%m-%d %H:%M:%S",
+]
+
+
+def _detect_date_format(file_path: str, column: str, encoding: str, sample_size: int = 500) -> str | None:
+    """
+    Đọc thử một mẫu nhỏ của cột ngày để dò ra định dạng cụ thể (vd "%m-%d-%y").
+    Nếu tìm được, việc parse ngày cho toàn bộ file sẽ dùng C-parser nhanh của
+    pandas thay vì phải fallback từng phần tử qua dateutil (chậm hơn nhiều
+    lần và in cảnh báo liên tục cho mỗi chunk).
+    Trả về None nếu không dò được định dạng nào đạt độ chính xác > 95% —
+    khi đó vẫn hoạt động bình thường, chỉ là chậm hơn (pandas tự suy luận).
+    """
+    try:
+        sample = pd.read_csv(file_path, usecols=[column], nrows=sample_size, encoding=encoding)[column].dropna()
+    except Exception:
+        return None
+    if sample.empty:
+        return None
+    for fmt in _COMMON_DATE_FORMATS:
+        try:
+            parsed = pd.to_datetime(sample, format=fmt, errors="coerce")
+        except (ValueError, TypeError):
+            continue
+        if parsed.notna().mean() > 0.95:
+            return fmt
+    return None
+
+
+def _bucket_date_series(series: pd.Series, period: str, date_format: str | None = None) -> pd.Series:
+    """
+    Chuyển cột ngày về nhãn theo KỲ BÁO CÁO (ngày/tuần/tháng/quý/năm).
+
+    QUAN TRỌNG: luôn parse về datetime thật (pd.to_datetime) rồi format lại
+    theo chuẩn ISO (YYYY-MM-DD, YYYY-Wxx, YYYY-MM, YYYY-Qx, YYYY) — KHÔNG
+    dùng trực tiếp chuỗi ngày gốc trong file. Lý do: nếu giữ nguyên chuỗi
+    gốc (vd "04-30-22" kiểu MM-DD-YY) rồi sort_index() theo alphabet, thứ tự
+    sẽ SAI khi dữ liệu trải qua nhiều năm (vd "01-01-23" bị sắp xếp trước
+    "12-31-22" vì so sánh chuỗi, dù về mặt thời gian nó ở SAU). Định dạng
+    ISO luôn sắp đúng thứ tự thời gian khi sort dạng chuỗi.
+
+    `date_format`: định dạng đã dò được từ _detect_date_format (nếu có) để
+    parse nhanh bằng C-parser thay vì fallback chậm qua dateutil.
+
+    Ngày không parse được (NaT) sẽ được giữ nguyên là NaN/NA để _to_group_label
+    gán nhãn "(Thiếu dữ liệu)" ở bước sau — không tự bịa ra một "kỳ" giả.
+    """
+    if date_format:
+        dt = pd.to_datetime(series, format=date_format, errors="coerce")
+    else:
+        dt = pd.to_datetime(series, errors="coerce")
+
+    if period == "day":
+        return dt.dt.strftime("%Y-%m-%d")
+    if period == "month":
+        return dt.dt.strftime("%Y-%m")
+    if period == "year":
+        return dt.dt.strftime("%Y")
+    if period == "quarter":
+        # Dùng dtype "string" (nullable) để NA lan truyền đúng khi nối chuỗi,
+        # tránh bị biến thành chuỗi "nan-Q<NA>" xấu xí.
+        year_s = dt.dt.year.astype("Int64").astype("string")
+        q_s = dt.dt.quarter.astype("Int64").astype("string")
+        return year_s + "-Q" + q_s
+    if period == "week":
+        iso = dt.dt.isocalendar()
+        year_s = iso["year"].astype("Int64").astype("string")
+        week_s = iso["week"].astype("Int64").astype("string").str.zfill(2)
+        return year_s + "-W" + week_s
+
+    raise ValueError(f"Kỳ báo cáo không hỗ trợ: {period!r} (chỉ nhận {DATE_PERIODS})")
+
+
 def compute_stats_pandas_chunk(
     file_path: str,
     column: str,
     chunksize: int = 200_000,
     group_by: str | None = None,
     extra_group_by: str | None = None,
+    date_period: str | None = None,
     encoding: str = "utf-8",
 ) -> dict:
     """
     Tính thống kê tổng quan (+ theo nhóm, + theo `extra_group_by` nếu có,
     ví dụ cột ngày để làm xu hướng) trong CÙNG MỘT lượt đọc file.
 
+    `date_period`: nếu có (một trong DATE_PERIODS), cột `extra_group_by`
+    được coi là cột NGÀY và sẽ được gộp theo kỳ báo cáo tương ứng (ngày/
+    tuần/tháng/quý/năm) thay vì nhóm theo đúng giá trị thô trong file.
+
     Quan trọng: chỉ đọc đúng các cột cần dùng (`usecols`) — với file có
     nhiều cột thừa (vài chục cột), điều này giảm đáng kể thời gian parse
     và tránh các cảnh báo/độ trễ do suy luận kiểu dữ liệu (dtype inference)
     trên các cột không liên quan.
     """
+    if date_period is not None and date_period not in DATE_PERIODS:
+        raise ValueError(f"date_period phải là một trong {DATE_PERIODS}, nhận: {date_period!r}")
+
+    # Dò định dạng ngày MỘT LẦN trước khi đọc file theo chunk (xem docstring
+    # _detect_date_format) — tránh phải suy luận lại (chậm) ở mỗi chunk.
+    date_format = None
+    if date_period and extra_group_by:
+        date_format = _detect_date_format(file_path, extra_group_by, encoding)
+
     total_count = 0
     total_sum = 0.0
     total_sumsq = 0.0
@@ -106,7 +201,11 @@ def compute_stats_pandas_chunk(
                     valid_chunk.groupby(gcol)[column].agg(["count", "sum", "min", "max"])
                 )
             if extra_group_by:
-                ecol = valid_chunk[extra_group_by].map(_to_group_label)
+                if date_period:
+                    ecol_raw = _bucket_date_series(valid_chunk[extra_group_by], date_period, date_format)
+                else:
+                    ecol_raw = valid_chunk[extra_group_by]
+                ecol = ecol_raw.map(_to_group_label)
                 trend_frames.append(
                     valid_chunk.groupby(ecol)[column].agg(["count", "sum"])
                 )
@@ -185,6 +284,11 @@ def print_report(result: dict) -> None:
         for key, stats in result["by_group"].items():
             print(f"  - {key:12s}: mean={stats['mean']:>14,.2f}  min={stats['min']:>14,.2f}"
                   f"  max={stats['max']:>14,.2f}  count={int(stats['count_valid']):,}")
+    if "trend" in result:
+        print("-" * 60)
+        print(f"Xu hướng theo '{result['extra_group_by']}':")
+        for k, s, c in zip(result["trend"]["keys"], result["trend"]["sum"], result["trend"]["count"]):
+            print(f"  - {k:12s}: sum={s:>14,.2f}  count={c:,}")
     print("=" * 60)
 
 
@@ -193,6 +297,9 @@ def main():
     parser.add_argument("--file", required=True)
     parser.add_argument("--column", required=True)
     parser.add_argument("--group-by", default=None)
+    parser.add_argument("--date-column", default=None, help="Cột ngày để xem xu hướng (tuỳ chọn)")
+    parser.add_argument("--date-period", default=None, choices=DATE_PERIODS,
+                         help="Gộp cột --date-column theo kỳ báo cáo: day/week/month/quarter/year")
     parser.add_argument("--chunksize", type=int, default=200_000)
     args = parser.parse_args()
 
@@ -200,7 +307,8 @@ def main():
         raise SystemExit(f"Không tìm thấy file: {args.file}")
 
     result = compute_stats_pandas_chunk(
-        args.file, args.column, chunksize=args.chunksize, group_by=args.group_by
+        args.file, args.column, chunksize=args.chunksize, group_by=args.group_by,
+        extra_group_by=args.date_column, date_period=args.date_period,
     )
     print_report(result)
 
