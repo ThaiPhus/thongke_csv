@@ -458,6 +458,18 @@ charts_for_report = {}
 has_group = bool(p["group_col"])
 has_trend = bool(p["date_col"]) and "trend" in result and result["trend"]["keys"]
 
+# Nếu chọn kỳ báo cáo (ngày/tuần/tháng/quý/năm) nhưng cột đã chọn không thực
+# sự chứa ngày hợp lệ, toàn bộ (hoặc phần lớn) dữ liệu sẽ dồn vào mục
+# "(Thiếu dữ liệu)" — tính trước tỉ lệ này để quyết định có đáng vẽ biểu đồ
+# xu hướng hay không (tránh vẽ ra biểu đồ 1 điểm vô nghĩa).
+trend_missing_frac = 0.0
+if has_trend:
+    _trend = result["trend"]
+    _total = sum(_trend["count"])
+    _missing = _trend["count"][_trend["keys"].index("(Thiếu dữ liệu)")] if "(Thiếu dữ liệu)" in _trend["keys"] else 0
+    trend_missing_frac = (_missing / _total) if _total else 0.0
+trend_has_useful_data = has_trend and trend_missing_frac < 1.0
+
 if has_group:
     labels = list(result["by_group"].keys())
     means = [s["mean"] for s in result["by_group"].values()]
@@ -486,7 +498,7 @@ if has_group:
         )
         charts_for_report[pie_title] = pie_img
 
-if hist is not None and has_trend:
+if hist is not None and trend_has_useful_data:
     row2_col1, row2_col2 = st.columns(2)
 else:
     row2_col1 = row2_col2 = None
@@ -506,19 +518,31 @@ if hist is not None:
 
 if has_trend:
     trend = result["trend"]
-    period_suffix = f" theo {p['date_period_label']}" if p.get("date_period_label") else f" theo {p['date_col']}"
-    trend_title = f"Xu hướng tổng {p['value_column']}{period_suffix}"
-    trend_img = line_chart_trend(trend["keys"], trend["sum"], trend_title, p["value_column"])
-    first_v, last_v = trend["sum"][0], trend["sum"][-1]
-    pct_change = ((last_v - first_v) / first_v * 100) if first_v else 0
-    direction = "tăng" if pct_change >= 0 else "giảm"
-    trend_html = _chart_card_html(trend_img, f"Từ đầu đến cuối kỳ: <b>{direction} {abs(pct_change):.1f}%</b>")
-    if row2_col2 is not None:
-        with row2_col2:
+
+    # Trước đây app ÂM THẦM vẽ ra biểu đồ 1 điểm vô nghĩa khi cột đã chọn
+    # không thực sự chứa ngày hợp lệ, khiến người dùng tưởng là lỗi tính
+    # toán. Giờ cảnh báo rõ ràng thay vì vẽ biểu đồ gây hiểu nhầm.
+    if p.get("date_period") and trend_missing_frac >= 0.3:
+        st.warning(
+            f"⚠️ Cột **{p['date_col']}** có {trend_missing_frac * 100:.0f}% giá trị không được nhận diện "
+            f"là ngày hợp lệ (rơi vào nhóm \"(Thiếu dữ liệu)\"). Hãy kiểm tra lại: chọn đúng cột "
+            f"chứa ngày tháng ở mục \"Cột thời gian để xem xu hướng\" trong thanh bên trái."
+        )
+
+    if trend_has_useful_data:
+        period_suffix = f" theo {p['date_period_label']}" if p.get("date_period_label") else f" theo {p['date_col']}"
+        trend_title = f"Xu hướng tổng {p['value_column']}{period_suffix}"
+        trend_img = line_chart_trend(trend["keys"], trend["sum"], trend_title, p["value_column"])
+        first_v, last_v = trend["sum"][0], trend["sum"][-1]
+        pct_change = ((last_v - first_v) / first_v * 100) if first_v else 0
+        direction = "tăng" if pct_change >= 0 else "giảm"
+        trend_html = _chart_card_html(trend_img, f"Từ đầu đến cuối kỳ: <b>{direction} {abs(pct_change):.1f}%</b>")
+        if row2_col2 is not None:
+            with row2_col2:
+                st.markdown(trend_html, unsafe_allow_html=True)
+        else:
             st.markdown(trend_html, unsafe_allow_html=True)
-    else:
-        st.markdown(trend_html, unsafe_allow_html=True)
-    charts_for_report[trend_title] = trend_img
+        charts_for_report[trend_title] = trend_img
 
 if not charts_for_report:
     st.info("Chưa có biểu đồ nào — hãy chọn cột nhóm/thời gian hoặc bật histogram ở thanh bên trái.")
